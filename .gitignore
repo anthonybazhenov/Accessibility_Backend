@@ -46,3 +46,8 @@ volumes/*.db
 
 # Spring Boot
 application-local.properties
+
+# Large data files
+sign_mnist_train.csv
+*.csv
+!pom.xml
