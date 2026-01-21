@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="main">
+        <div class="container">
+            <div class="header">
+                <img src="https://github.com/The-GPT-Warriors/ASLFrontend/assets/107821010/a767e359-1bb9-4fda-86f6-3e870d85938e" alt="logo" class="logo">
+                <h1 class="title">Welcome to The GPT Warriors Organization!!</h1>
+            </div>
+            <div class="main">
+                <h3 class="description1">Team Members - Tay Kim, Anthony Bazhenov, Ethan Tran, Emaad Mir</h3>
+                <br>
+                <div class="camera-container" style="position: relative; display: inline-block;">
+                    <div class="camera"></div>
+                    <canvas id="overlayCanvas" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+                </div>
+                <br>
+                <input class="text" id="predictionInput" placeholder="Predictions from the model will go here" readonly>
+                <div id="timer" style="color: black; margin-top: 10px;">Next capture in: 2 seconds</div>
+                <div id="trackingStatus" style="color: blue; margin-top: 5px; font-size: 12px;">Initializing hand tracking...</div>
+                <br>
+                <br>
+                <p class="description2">To get started, please log in or make an account.</p>
+                <br>
+                <button class="button1" onclick="window.location.href='login.html'">Login</button>
+                <button class="button2" onclick="window.location.href='signup.html'">Create an Account</button>
+        </div>
+    </div>
+  <script>
+    const video = document.createElement('video');
+    video.setAttribute('autoplay', '');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('muted', '');
+    video.style.width = '600px';
+    video.style.height = '450px';
+    video.style.display = 'block';
+    video.style.objectFit = 'cover';
+    
+    const canvas = document.createElement('canvas');
+    const overlayCanvas = document.getElementById('overlayCanvas');
+    const cameraDiv = document.querySelector('.camera');
+    const cameraContainer = document.querySelector('.camera-container');
+    const timerElement = document.getElementById('timer');
+    const predictionInput = document.getElementById('predictionInput');
+    const trackingStatus = document.getElementById('trackingStatus');
+    
+    // Set initial canvas size
+    overlayCanvas.style.width = '600px';
+    overlayCanvas.style.height = '450px';
+    
+    // Hand tracking variables - using motion detection
+    let handPosition = null; // {x, y, width, height}
+    const boxWidth = 200; // Fixed box width
+    const boxHeight = 200; // Fixed box height
+    let previousFrame = null;
+    let motionCenter = null;
+    
+    const constraints = {
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 }
+      }
+    };
+    
+    // Simple motion-based hand tracking
+    function initializeHandTracking() {
+      console.log('Initializing motion-based hand tracking...');
+      if (trackingStatus) {
+        trackingStatus.textContent = 'Hand tracking active - Move your hand!';
+        trackingStatus.style.color = 'green';
+      }
+      
+      // Start motion detection
+      detectMotion();
+    }
+    
+    // Detect motion to track hand position
+    function detectMotion() {
+      if (!video.readyState || video.videoWidth === 0) {
+        requestAnimationFrame(detectMotion);
+        return;
+      }
+      
+      // Create a temporary canvas to analyze frames
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = video.videoWidth;
+      tempCanvas.height = video.videoHeight;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(video, 0, 0);
+      
+      const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+      const data = imageData.data;
+      
+      if (previousFrame) {
+        // Compare with previous frame to find motion
+        let motionPixels = [];
+        let totalMotionX = 0;
+        let totalMotionY = 0;
+        let motionCount = 0;
+        
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const prevR = previousFrame[i];
+          const prevG = previousFrame[i + 1];
+          const prevB = previousFrame[i + 2];
+          
+          // Calculate difference
+          const diff = Math.abs(r - prevR) + Math.abs(g - prevG) + Math.abs(b - prevB);
+          
+          if (diff > 30) { // Threshold for motion detection
+            const pixelIndex = i / 4;
+            const x = pixelIndex % tempCanvas.width;
+            const y = Math.floor(pixelIndex / tempCanvas.width);
+            
+            motionPixels.push({ x, y });
+            totalMotionX += x;
+            totalMotionY += y;
+            motionCount++;
+          }
+        }
+        
+        if (motionCount > 100) { // Minimum motion pixels
+          // Calculate center of motion
+          const centerX = totalMotionX / motionCount;
+          const centerY = totalMotionY / motionCount;
+          
+          // Smooth the motion center (reduce jitter)
+          if (motionCenter) {
+            motionCenter.x = motionCenter.x * 0.7 + centerX * 0.3;
+            motionCenter.y = motionCenter.y * 0.7 + centerY * 0.3;
+          } else {
+            motionCenter = { x: centerX, y: centerY };
+          }
+          
+          // Update hand position - box follows motion center
+          handPosition = {
+            x: motionCenter.x - boxWidth / 2,
+            y: motionCenter.y - boxHeight / 2,
+            width: boxWidth,
+            height: boxHeight
+          };
+          
+          // Ensure box stays within canvas bounds
+          handPosition.x = Math.max(0, Math.min(handPosition.x, overlayCanvas.width - boxWidth));
+          handPosition.y = Math.max(0, Math.min(handPosition.y, overlayCanvas.height - boxHeight));
+          
+          if (trackingStatus) {
+            trackingStatus.textContent = 'Hand motion detected! Tracking...';
+            trackingStatus.style.color = 'green';
+          }
+        } else {
+          // Keep last position if motion is low
+          if (!handPosition) {
+            handPosition = {
+              x: (overlayCanvas.width - boxWidth) / 2,
+              y: (overlayCanvas.height - boxHeight) / 2,
+              width: boxWidth,
+              height: boxHeight
+            };
+          }
+          if (trackingStatus) {
+            trackingStatus.textContent = 'Move your hand to track it';
+            trackingStatus.style.color = 'orange';
+          }
+        }
+      }
+      
+      // Store current frame for next comparison
+      previousFrame = new Uint8ClampedArray(data);
+      
+      // Always redraw the bounding box
+      drawBoundingBox();
+      
+      // Continue detection loop
+      requestAnimationFrame(detectMotion);
+    }
+    
+    // Add video to DOM first
+    cameraDiv.appendChild(video);
+    
+    navigator.mediaDevices.getUserMedia(constraints)
+      .then((stream) => {
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          video.play();
+          
+          // Wait for video to be ready
+          const initTracking = () => {
+            if (video.videoWidth === 0 || video.videoHeight === 0) {
+              setTimeout(initTracking, 100);
+              return;
+            }
+            
+            // Set overlay canvas dimensions to match video
+            const videoWidth = video.videoWidth;
+            const videoHeight = video.videoHeight;
+            
+            overlayCanvas.width = videoWidth;
+            overlayCanvas.height = videoHeight;
+            
+            console.log('Video ready:', videoWidth, 'x', videoHeight);
+            
+            // Initial centered bounding box
+            handPosition = {
+              x: (overlayCanvas.width - boxWidth) / 2,
+              y: (overlayCanvas.height - boxHeight) / 2,
+              width: boxWidth,
+              height: boxHeight
+            };
+            drawBoundingBox();
+            
+            // Initialize hand tracking after video is ready
+            setTimeout(() => {
+              initializeHandTracking();
+            }, 500);
+            
+            // Continuous animation loop to ensure smooth updates
+            const animate = () => {
+              drawBoundingBox();
+              requestAnimationFrame(animate);
+            };
+            animate();
+          };
+          
+          // Start initialization
+          video.addEventListener('loadeddata', initTracking);
+          if (video.readyState >= 2) {
+            initTracking();
+          }
+        };
+      })
+      .catch((err) => {
+        console.error('Error accessing camera:', err);
+        cameraDiv.innerHTML = '<p style="color: red; padding: 20px;">Error accessing camera. Please allow camera permissions and refresh the page.</p>';
+      });
+    
+    function drawBoundingBox() {
+      if (!overlayCanvas) return;
+      
+      const ctx = overlayCanvas.getContext('2d');
+      // Clear the entire canvas before redrawing
+      ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      
+      if (handPosition && handPosition.x !== undefined) {
+        // Draw bounding box at current hand position
+        ctx.strokeStyle = '#00ff00'; // Green color
+        ctx.lineWidth = 4;
+        ctx.strokeRect(handPosition.x, handPosition.y, handPosition.width, handPosition.height);
+        
+        // Optional: Add corner indicators for better visibility
+        const cornerSize = 15;
+        ctx.fillStyle = '#00ff00';
+        // Top-left corner
+        ctx.fillRect(handPosition.x, handPosition.y, cornerSize, 4);
+        ctx.fillRect(handPosition.x, handPosition.y, 4, cornerSize);
+        // Top-right corner
+        ctx.fillRect(handPosition.x + handPosition.width - cornerSize, handPosition.y, cornerSize, 4);
+        ctx.fillRect(handPosition.x + handPosition.width - 4, handPosition.y, 4, cornerSize);
+        // Bottom-left corner
+        ctx.fillRect(handPosition.x, handPosition.y + handPosition.height - 4, cornerSize, 4);
+        ctx.fillRect(handPosition.x, handPosition.y + handPosition.height - cornerSize, 4, cornerSize);
+        // Bottom-right corner
+        ctx.fillRect(handPosition.x + handPosition.width - cornerSize, handPosition.y + handPosition.height - 4, cornerSize, 4);
+        ctx.fillRect(handPosition.x + handPosition.width - 4, handPosition.y + handPosition.height - cornerSize, 4, cornerSize);
+      } else {
+        // Fallback: centered box if no hand detected yet
+        const fallbackWidth = overlayCanvas.width * 0.6;
+        const fallbackHeight = overlayCanvas.height * 0.6;
+        const x = (overlayCanvas.width - fallbackWidth) / 2;
+        const y = (overlayCanvas.height - fallbackHeight) / 2;
+        
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(x, y, fallbackWidth, fallbackHeight);
+      }
+    }
+    
+    function captureAndSendImage() {
+      if (!video.videoWidth || !video.videoHeight) return;
+      
+      // Set canvas dimensions to match video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      // Draw the current frame from the video onto the canvas
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // If hand position is detected, crop to bounding box area for better accuracy
+      let imageData;
+      if (handPosition && handPosition.x !== undefined) {
+        // Create a temporary canvas for cropping
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = boxWidth;
+        cropCanvas.height = boxHeight;
+        const cropCtx = cropCanvas.getContext('2d');
+        
+        // Calculate source coordinates (scale from overlay canvas to video dimensions)
+        const scaleX = video.videoWidth / overlayCanvas.width;
+        const scaleY = video.videoHeight / overlayCanvas.height;
+        const sx = handPosition.x * scaleX;
+        const sy = handPosition.y * scaleY;
+        const sw = handPosition.width * scaleX;
+        const sh = handPosition.height * scaleY;
+        
+        // Draw cropped region
+        cropCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, boxWidth, boxHeight);
+        imageData = cropCanvas.toDataURL('image/png').replace(/^data:image\/\w+;base64,/, '');
+      } else {
+        // Fallback: use full image
+        imageData = canvas.toDataURL('image/png').replace(/^data:image\/\w+;base64,/, '');
+      }
+      
+      // Send the image data to the backend
+      fetch('/image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ image: imageData }),
+      })
+      .then(response => response.json())
+      .then(data => {
+        console.log('Response:', data);
+        // Display the prediction in the input field
+        if (data.prediction) {
+          predictionInput.value = 'Prediction: ' + data.prediction;
+        } else if (data.letter) {
+          predictionInput.value = 'Prediction: ' + data.letter;
+        } else if (data.message) {
+          predictionInput.value = data.message;
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        predictionInput.value = 'Error: Could not connect to backend. Make sure the backend is running on port 8085.';
+      });
+    }
+    
+    // Capture an image every 2 seconds
+    setInterval(function() {
+      captureAndSendImage();
+      updateTimer();
+    }, 2000);
+    
+    function updateTimer() {
+      let seconds = 2;
+      if (timerElement) {
+        timerElement.textContent = `Next capture in: ${seconds} seconds`;
+        const countdown = setInterval(() => {
+          seconds--;
+          if (timerElement) {
+            timerElement.textContent = `Next capture in: ${seconds} seconds`;
+          }
+          if (seconds <= 0) {
+            clearInterval(countdown);
+          }
+        }, 1000);
+      }
+    }
+  </script>
+</body>
+</html>
