@@ -150,6 +150,12 @@
             <artifactId>commonmark</artifactId>
             <version>0.21.0</version>
         </dependency>
+        <!-- Apache PDFBox for PDF processing -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.1</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -157,6 +163,17 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <mainClass>com.husky.spring_portfolio.mvc.chatLLM.FineTuningDataBuilder</mainClass>
+                    <arguments>
+                        <argument>${exec.args}</argument>
+                    </arguments>
+                </configuration>
             </plugin>
         </plugins>
     </build>

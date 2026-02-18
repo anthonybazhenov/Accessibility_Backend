@@ -2,7 +2,6 @@ com/husky/spring_portfolio/mvc/calendar/CalendarApiController.class
 com/husky/spring_portfolio/mvc/calculator/Calculator.class
 com/husky/spring_portfolio/mvc/calendar/Year.class
 com/husky/hacks/classDataStruct/Alphabet$KeyType.class
-com/husky/spring_portfolio/mvc/aslAI/PredictionRepository.class
 com/husky/hacks/methodsDataTypes/IntegerByValueOrReference.class
 com/husky/spring_portfolio/mvc/note/Note.class
 com/husky/hacks/methodsDataTypes/Triple.class
@@ -11,16 +10,12 @@ com/husky/spring_portfolio/mvc/leaderboard/LeaderboardStuff.class
 com/husky/hacks/classDataStruct/QueueTester.class
 com/husky/hacks/methodsDataTypes/Menu.class
 com/husky/spring_portfolio/controllers/Birds.class
-com/husky/spring_portfolio/mvc/frames/FrameApiController.class
 com/husky/spring_portfolio/mvc/jokes/Jokes.class
 com/husky/hacks/methodsDataTypes/IntByReference.class
 com/husky/hacks/methodsDataTypes/DiverseArray.class
-com/husky/spring_portfolio/mvc/frames/FrameJpaRepository.class
 com/husky/hacks/classDataStruct/Cupcakes.class
-com/husky/spring_portfolio/mvc/aslAI/Prediction.class
 com/husky/spring_portfolio/mvc/ModelInit.class
 com/husky/spring_portfolio/mvc/person/PersonApiController.class
-com/husky/spring_portfolio/mvc/frames/Frame.class
 com/husky/hacks/methodsDataTypes/MenuRow.class
 com/husky/hacks/classDataStruct/Animal$KeyType.class
 com/husky/hacks/classDataStruct/Person$KeyType.class
@@ -41,8 +36,6 @@ com/husky/spring_portfolio/mvc/jwt/JwtTokenUtil.class
 com/husky/spring_portfolio/mvc/lightboard/LightBoard.class
 com/husky/spring_portfolio/Main.class
 com/husky/hacks/classDataStruct/Person.class
-com/husky/spring_portfolio/mvc/aslAI/PredictionApiController.class
-com/husky/spring_portfolio/mvc/aslAI/PredictionService.class
 com/husky/hacks/methodsDataTypes/DoNothingByValue.class
 com/husky/hacks/classDataStruct/Alphabet.class
 com/husky/spring_portfolio/mvc/calendar/APCalendar.class
@@ -64,7 +57,6 @@ com/husky/spring_portfolio/mvc/person/PersonDetailsService.class
 com/husky/spring_portfolio/mvc/leaderboard/LeaderboardApiController.class
 com/husky/hacks/methodsDataTypes/IntByValue.class
 com/husky/spring_portfolio/mvc/person/PersonRoleJpaRepository.class
-com/husky/spring_portfolio/mvc/frames/FrameApiController$ImageData.class
 com/husky/hacks/classDataStruct/LinkedList.class
 com/husky/spring_portfolio/SecurityConfig.class
 com/husky/spring_portfolio/mvc/jokes/JokesApiController.class
