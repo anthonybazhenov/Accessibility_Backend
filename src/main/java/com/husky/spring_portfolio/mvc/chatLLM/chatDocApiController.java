@@ -10,7 +10,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
@@ -55,7 +54,9 @@ public class chatDocApiController {
             response.put("message", "Document processed successfully");
             response.put("documentId", document.getId());
             response.put("filename", document.getOriginalFilename());
-            response.put("status", document.getStatus());
+            response.put("pipelineStatus", document.getPipelineStatus());
+            response.put("outcomeStatus", document.getOutcomeStatus());
+            response.put("status", document.getOutcomeStatus() != null ? document.getOutcomeStatus() : document.getStatus());
             
             return new ResponseEntity<>(response, HttpStatus.CREATED);
         } catch (IllegalArgumentException e) {
@@ -84,6 +85,69 @@ public class chatDocApiController {
     }
 
     /**
+     * GET endpoint to return full stored fields for a document.
+     * By default excludes alteredContent (HTML); use includeHtml=true to include it.
+     */
+    @GetMapping("/alteredDocuments/{id}")
+    public ResponseEntity<?> getDocumentById(@PathVariable Long id,
+                                             @RequestParam(required = false, defaultValue = "false") boolean includeHtml) {
+        chatDoc document = documentService.getDocumentById(id);
+        if (document == null) {
+            return new ResponseEntity<>(Map.of("error", "Document not found"), HttpStatus.NOT_FOUND);
+        }
+        Map<String, Object> body = new HashMap<>();
+        body.put("id", document.getId());
+        body.put("originalFilename", document.getOriginalFilename());
+        body.put("originalPdfPath", document.getOriginalPdfPath());
+        body.put("alteredPdfPath", document.getAlteredPdfPath());
+        body.put("originalContent", document.getOriginalContent());
+        body.put("altTextJson", document.getAltTextJson());
+        body.put("accessibilityReportJson", document.getAccessibilityReportJson());
+        body.put("pipelineStatus", document.getPipelineStatus());
+        body.put("outcomeStatus", document.getOutcomeStatus());
+        body.put("status", document.getOutcomeStatus() != null ? document.getOutcomeStatus() : document.getStatus());
+        body.put("timestamp", document.getTimestamp());
+        body.put("complianceLabel", document.getComplianceLabel());
+        body.put("labelSource", document.getLabelSource());
+        body.put("auditJson", document.getAuditJson());
+        body.put("remediationPlanJson", document.getRemediationPlanJson());
+        if (includeHtml) {
+            body.put("alteredContent", document.getAlteredContent());
+        } else {
+            body.put("alteredContentIncluded", false);
+        }
+        return new ResponseEntity<>(body, HttpStatus.OK);
+    }
+
+    /**
+     * PATCH endpoint to set human compliance label (overrides heuristic).
+     * value=COMPLIANT|NONCOMPLIANT|UNKNOWN
+     */
+    @PatchMapping("/alteredDocuments/{id}/label")
+    public ResponseEntity<?> setHumanLabel(@PathVariable Long id,
+                                           @RequestParam("value") String value) {
+        String v = value != null ? value.toUpperCase().trim() : "";
+        if (!v.equals("COMPLIANT") && !v.equals("NONCOMPLIANT") && !v.equals("UNKNOWN")) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "value must be COMPLIANT, NONCOMPLIANT, or UNKNOWN");
+            return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+        }
+        chatDoc document = documentService.updateHumanLabel(id, v);
+        if (document == null) {
+            return new ResponseEntity<>(Map.of("error", "Document not found"), HttpStatus.NOT_FOUND);
+        }
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("id", document.getId());
+        summary.put("filename", document.getOriginalFilename());
+        summary.put("complianceLabel", document.getComplianceLabel());
+        summary.put("labelSource", document.getLabelSource());
+        summary.put("pipelineStatus", document.getPipelineStatus());
+        summary.put("outcomeStatus", document.getOutcomeStatus());
+        summary.put("status", document.getOutcomeStatus() != null ? document.getOutcomeStatus() : document.getStatus());
+        return new ResponseEntity<>(summary, HttpStatus.OK);
+    }
+
+    /**
      * GET endpoint to retrieve accessibility report for a specific document
      */
     @GetMapping("/alteredDocuments/{id}/report")
@@ -101,6 +165,14 @@ public class chatDocApiController {
             error.put("error", "Failed to retrieve report: " + e.getMessage());
             return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /**
+     * GET endpoint to return JSON Schema for RemediationPlan (for validation / parsing).
+     */
+    @GetMapping("/remediation-plan/schema")
+    public ResponseEntity<?> getRemediationPlanSchema() {
+        return new ResponseEntity<>(RemediationPlanSchema.getJsonSchema(), HttpStatus.OK);
     }
 
     /**

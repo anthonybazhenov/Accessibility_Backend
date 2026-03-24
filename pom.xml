@@ -170,9 +170,7 @@
                 <version>3.1.0</version>
                 <configuration>
                     <mainClass>com.husky.spring_portfolio.mvc.chatLLM.FineTuningDataBuilder</mainClass>
-                    <arguments>
-                        <argument>${exec.args}</argument>
-                    </arguments>
+                    <arguments><argument>${exec.args}</argument></arguments>
                 </configuration>
             </plugin>
         </plugins>

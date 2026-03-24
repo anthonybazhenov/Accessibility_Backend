@@ -18,6 +18,7 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.Base64;
 import java.util.HashMap;
@@ -55,8 +56,47 @@ public class chatDocService {
     @Value("${openai.api.key:}")
     private String openaiApiKey;
     
+    /**
+     * Default OpenAI model (fallback). Used for general calls and for per-image vision alt-text
+     * when no separate vision override exists.
+     */
     @Value("${openai.model:gpt-4o}")
-    private String openaiModel; // Can be changed to fine-tuned model: "ft:gpt-4o:your-org:pdf-alttext:..."
+    private String openaiModel;
+
+    /**
+     * Optional fine-tuned model for <strong>stage 2</strong>: original document content +
+     * remediation plan → altered/accessible HTML (or full remediated document).
+     * When empty, the pipeline uses deterministic {@link #createAccessibleHtmlFromPlan} instead of an LLM.
+     */
+    @Value("${openai.alt.model:}")
+    private String openaiAltModel;
+
+    /**
+     * Optional fine-tuned model for <strong>stage 1</strong>: unaltered document context
+     * (text, report, image summaries) → structured {@link RemediationPlan}.
+     * When empty, falls back to {@link #openaiModel} inside {@link #modelForPlanGeneration()}.
+     */
+    @Value("${openai.plan.model:}")
+    private String openaiPlanModel;
+
+    /** Base model for plan generation: explicit plan fine-tune, else {@link #openaiModel}. */
+    private String modelForPlanGeneration() {
+        if (openaiPlanModel != null && !openaiPlanModel.isBlank()) {
+            return openaiPlanModel.trim();
+        }
+        return openaiModel;
+    }
+
+    /**
+     * Model for altered-document LLM step. Only non-empty values enable the future/proposed
+     * chat completion that consumes document + plan and returns HTML.
+     */
+    private String modelForAlteredDocumentGeneration() {
+        if (openaiAltModel == null || openaiAltModel.isBlank()) {
+            return null;
+        }
+        return openaiAltModel.trim();
+    }
 
     @Autowired
     public chatDocService(chatDocRepository documentRepository) {
@@ -85,58 +125,77 @@ public class chatDocService {
         chatDoc document = new chatDoc();
         document.setOriginalFilename(filename);
         document.setOriginalPdfPath(originalPdfPath);
-        document.setStatus("UPLOADED");
+        document.setPipelineStatus("UPLOADED");
         document.setTimestamp(LocalDateTime.now());
         document = documentRepository.save(document);
-        
+
         try {
             // Step 1: Extract text and images
-            document.setStatus("EXTRACTED");
+            document.setPipelineStatus("EXTRACTED");
             String originalContent = extractTextFromPdf(pdfBytes);
             document.setOriginalContent(originalContent);
-            
-            List<ImageInfo> images = extractImagesFromPdf(pdfBytes, originalContent);
             document = documentRepository.save(document);
-            
+
+            List<ImageInfo> images = extractImagesFromPdf(pdfBytes, originalContent);
+
             // Step 2: Generate alt text for images
             List<AltTextResult> altTextResults = new ArrayList<>();
             if (!images.isEmpty()) {
-                document.setStatus("ALT_DONE");
+                document.setPipelineStatus("ALT_DONE");
                 altTextResults = generateAltTextForImages(images);
                 document.setAltTextJson(objectMapper.writeValueAsString(altTextResults));
                 document = documentRepository.save(document);
             }
-            
+
             // Step 3: Generate accessibility report
             AccessibilityReport report = generateAccessibilityReport(document, images);
             document.setAccessibilityReportJson(objectMapper.writeValueAsString(report));
-            
-            // Step 4: Create accessible HTML version
-            String accessibleHtml = createAccessibleHtml(originalContent, images, altTextResults);
+            document.setPipelineStatus("REPORT_DONE");
+            document = documentRepository.save(document);
+
+            // Compliance label from report (heuristic). Set labelSource HEURISTIC only if not already HUMAN.
+            document.setComplianceLabel(report.getErrors() > 0 ? "NONCOMPLIANT" : "COMPLIANT");
+            if (document.getLabelSource() == null) {
+                document.setLabelSource("HEURISTIC");
+            }
+
+            // Step 4: Remediation plan (stage 1: openai.plan.model → plan); then altered HTML
+            // (stage 2: optional openai.alt.model LLM, else deterministic createAccessibleHtmlFromPlan)
+            RemediationPlan plan = generateRemediationPlanWithModel(document, report, images);
+            String accessibleHtml;
+            if (plan != null) {
+                document.setRemediationPlanJson(objectMapper.writeValueAsString(plan));
+                String llmHtml = generateAlteredDocumentWithModel(
+                    originalContent, images, altTextResults, plan);
+                accessibleHtml = (llmHtml != null && !llmHtml.isBlank())
+                    ? llmHtml
+                    : createAccessibleHtmlFromPlan(originalContent, images, altTextResults, plan);
+            } else {
+                accessibleHtml = createAccessibleHtml(originalContent, images, altTextResults);
+            }
             document.setAlteredContent(accessibleHtml);
-            
-            // Determine final status
-                // Determine compliance label from the report (heuristic)
-            if (report.getErrors() > 0) {
-                document.setComplianceLabel("NONCOMPLIANT");
-            } else {
-                document.setComplianceLabel("COMPLIANT");
-            }
-            document.setLabelSource("HEURISTIC");
+            document.setPipelineStatus("HTML_DONE");
+            document = documentRepository.save(document);
 
-            // Determine final outcome status (optional)
-            if (report.getErrors() > 0) {
-                document.setStatus("NEEDS_REVIEW");
-            } else if (report.getWarnings() > 0) {
-                document.setStatus("REMEDIATED_WITH_WARNINGS");
+            // Outcome: NEEDS_REVIEW | REMEDIATED_WITH_WARNINGS | REMEDIATED
+            int errors = report.getErrors();
+            int warnings = report.getWarnings();
+            String outcome;
+            if (errors > 0) {
+                outcome = "NEEDS_REVIEW";
+            } else if (warnings > 0) {
+                outcome = "REMEDIATED_WITH_WARNINGS";
             } else {
-                document.setStatus("REMEDIATED");
+                outcome = "REMEDIATED";
             }
+            document.setOutcomeStatus(outcome);
+            document.setStatus(outcome);
 
-            
             return documentRepository.save(document);
-            
+
         } catch (Exception e) {
+            document.setPipelineStatus("FAILED");
+            document.setOutcomeStatus("FAILED");
             document.setStatus("FAILED");
             documentRepository.save(document);
             throw new IOException("Failed to process PDF: " + e.getMessage(), e);
@@ -282,6 +341,8 @@ public class chatDocService {
         content.add(Map.of("type", "image_url", "image_url", Map.of("url", imageDataUrl != null ? imageDataUrl : "")));
         message.put("content", content);
         Map<String, Object> body = new HashMap<>();
+        // Per-image alt text uses the default model (vision-capable). Plan/altered stages use
+        // openai.plan.model / openai.alt.model via their own helpers.
         body.put("model", openaiModel);
         body.put("max_tokens", 500);
         body.put("messages", List.of(message));
@@ -408,6 +469,41 @@ public class chatDocService {
     }
 
     /**
+     * Stage 1: Generate a {@link RemediationPlan} using {@link #modelForPlanGeneration()}
+     * (from {@code openai.plan.model}, else {@code openai.model}). Returns null if not implemented or on failure.
+     * When non-null, altered HTML uses {@link #generateAlteredDocumentWithModel} if {@code openai.alt.model}
+     * is set, otherwise {@link #createAccessibleHtmlFromPlan}.
+     */
+    private RemediationPlan generateRemediationPlanWithModel(chatDoc document, AccessibilityReport report,
+                                                             List<ImageInfo> images) {
+        // Ensures plan-model resolution stays wired (openai.plan.model or openai.model).
+        Objects.requireNonNull(modelForPlanGeneration(), "Plan generation model must resolve");
+        // TODO: POST chat/completions with modelForPlanGeneration(), payload = original content + report summary +
+        //       image summaries (see FineTuningPlanDataBuilder input shape); parse JSON → RemediationPlan.
+        // For now return null so we use createAccessibleHtml without a stored plan.
+        return null;
+    }
+
+    /**
+     * Stage 2: Optional LLM that takes original document context + remediation plan and returns accessible HTML.
+     * Uses {@code openai.alt.model} only when set; otherwise returns null and the caller uses
+     * {@link #createAccessibleHtmlFromPlan}.
+     */
+    private String generateAlteredDocumentWithModel(String originalContent, List<ImageInfo> images,
+                                                    List<AltTextResult> altTextResults, RemediationPlan plan) {
+        String model = modelForAlteredDocumentGeneration();
+        if (model == null) {
+            return null;
+        }
+        if (openaiApiKey == null || openaiApiKey.isEmpty()) {
+            return null;
+        }
+        // TODO: Build user message with originalContent (truncated), plan JSON, altText summary; model = openai.alt.model;
+        //       request full HTML; validate/sanitize; return string.
+        return null;
+    }
+
+    /**
      * Create accessible HTML version of the document
      */
     private String createAccessibleHtml(String originalContent, List<ImageInfo> images, 
@@ -471,7 +567,181 @@ public class chatDocService {
         return html.toString();
     }
 
+    /**
+     * Create accessible HTML by applying a RemediationPlan deterministically.
+     * Uses plan actions for alt/longdesc/decorative/language; falls back to altTextResults.
+     * Non-deterministic actions (FIX_LINK_TEXT, ADD_HEADING, etc.) are recorded in a notes section.
+     */
+    public String createAccessibleHtmlFromPlan(String originalContent, List<ImageInfo> images,
+                                               List<AltTextResult> altTextResults, RemediationPlan plan) {
+        if (plan == null) {
+            return createAccessibleHtml(originalContent, images, altTextResults);
+        }
+
+        // Index actions by target (page, imageIndex) for images; collect others
+        Map<String, List<RemediationAction>> actionsByImage = new HashMap<>();
+        String lang = "en";
+        List<RemediationAction> deferredActions = new ArrayList<>();
+
+        List<RemediationAction> actions = plan.getActions();
+        if (actions != null) {
+            for (RemediationAction a : actions) {
+                if (a == null) continue;
+                switch (a.getAction() != null ? a.getAction() : "") {
+                    case "SET_LANGUAGE":
+                        if (a.getData() != null && a.getData().get("language") != null) {
+                            lang = String.valueOf(a.getData().get("language"));
+                        }
+                        break;
+                    case "ADD_ALT_TEXT":
+                    case "ADD_LONGDESC":
+                    case "MARK_DECORATIVE":
+                        String key = imageTargetKey(a.getTarget());
+                        if (key != null) {
+                            actionsByImage.computeIfAbsent(key, k -> new ArrayList<>()).add(a);
+                        }
+                        break;
+                    case "FIX_LINK_TEXT":
+                    case "ADD_HEADING":
+                    case "ADD_TABLE_CAPTION":
+                    case "ADD_LIST_STRUCTURE":
+                    default:
+                        deferredActions.add(a);
+                        break;
+                }
+            }
+        }
+
+        Map<String, AltTextResult> altTextMap = altTextResults != null
+            ? altTextResults.stream().collect(Collectors.toMap(AltTextResult::getImageId, r -> r))
+            : new HashMap<>();
+
+        StringBuilder html = new StringBuilder();
+        html.append("<!DOCTYPE html>\n");
+        html.append("<html lang=\"").append(escapeHtml(lang)).append("\">\n");
+        html.append("<head>\n");
+        html.append("  <meta charset=\"UTF-8\">\n");
+        html.append("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+        html.append("  <title>Accessible Document</title>\n");
+        html.append("</head>\n");
+        html.append("<body>\n");
+        html.append("  <main>\n");
+
+        // Extracted text content (unchanged)
+        String[] paragraphs = originalContent != null ? originalContent.split("\n\n") : new String[0];
+        for (String para : paragraphs) {
+            para = para.trim();
+            if (para.isEmpty()) continue;
+            if (para.length() < 100 && (Character.isDigit(para.charAt(0)) ||
+                (Character.isUpperCase(para.charAt(0)) && !para.contains(".")))) {
+                html.append("    <h2>").append(escapeHtml(para)).append("</h2>\n");
+            } else {
+                html.append("    <p>").append(escapeHtml(para)).append("</p>\n");
+            }
+        }
+
+        // Images: apply ADD_ALT_TEXT, MARK_DECORATIVE, ADD_LONGDESC from plan
+        Map<Integer, Integer> pageToNextIndex = new HashMap<>();
+        for (ImageInfo image : images != null ? images : List.<ImageInfo>of()) {
+            int page = image.getPageNumber();
+            int imageIndexOnPage = pageToNextIndex.getOrDefault(page, 0);
+            pageToNextIndex.put(page, imageIndexOnPage + 1);
+            String targetKey = page + "_" + imageIndexOnPage;
+
+            List<RemediationAction> imgActions = actionsByImage.get(targetKey);
+            String alt = null;
+            String longdesc = null;
+            boolean decorative = false;
+            if (imgActions != null) {
+                for (RemediationAction a : imgActions) {
+                    if ("ADD_ALT_TEXT".equals(a.getAction()) && a.getData() != null && a.getData().get("alt") != null) {
+                        alt = String.valueOf(a.getData().get("alt"));
+                    } else if ("ADD_LONGDESC".equals(a.getAction()) && a.getData() != null && a.getData().get("longdesc") != null) {
+                        longdesc = String.valueOf(a.getData().get("longdesc"));
+                    } else if ("MARK_DECORATIVE".equals(a.getAction())) {
+                        decorative = true;
+                    }
+                }
+            }
+            if (alt == null) {
+                AltTextResult at = altTextMap.get(image.getImageId());
+                if (at != null && at.getAlt() != null) alt = at.getAlt();
+            }
+            if (longdesc == null && !decorative) {
+                AltTextResult at = altTextMap.get(image.getImageId());
+                if (at != null && at.getLongdesc() != null) longdesc = at.getLongdesc();
+            }
+            if (decorative) {
+                alt = "";
+            }
+            if (alt == null) alt = "Image on page " + page;
+
+            String longdescId = null;
+            if (longdesc != null && !longdesc.isEmpty()) {
+                longdescId = "longdesc-" + page + "-" + imageIndexOnPage;
+            }
+
+            html.append("    <figure>\n");
+            html.append("      <img src=\"data:image/png;base64,")
+                .append(Base64.getEncoder().encodeToString(image.getImageBytes()))
+                .append("\" alt=\"").append(escapeHtml(alt)).append("\"");
+            if (decorative) {
+                html.append(" role=\"presentation\"");
+            }
+            if (longdescId != null) {
+                html.append(" aria-describedby=\"").append(escapeHtml(longdescId)).append("\"");
+            }
+            html.append(" />\n");
+            if (longdescId != null) {
+                html.append("      <div id=\"").append(escapeHtml(longdescId)).append("\" class=\"longdesc\">\n");
+                html.append("        <details><summary>Extended description</summary><p>").append(escapeHtml(longdesc)).append("</p></details>\n");
+                html.append("      </div>\n");
+            }
+            html.append("    </figure>\n");
+        }
+
+        // Notes: proposed actions that could not be applied deterministically
+        if (!deferredActions.isEmpty()) {
+            html.append("  </main>\n");
+            html.append("  <!-- Proposed FIX_LINK_TEXT / ADD_HEADING / ADD_TABLE_CAPTION / ADD_LIST_STRUCTURE could not be applied deterministically (no block/link anchors in extracted content). See remediation-notes below. -->\n");
+            html.append("  <section class=\"remediation-notes\" aria-label=\"Proposed remediation notes\">\n");
+            html.append("    <h2>Proposed outline / actions not applied automatically</h2>\n");
+            html.append("    <p>The following actions require manual review (no deterministic block structure or link anchors in extracted content):</p>\n");
+            html.append("    <ul>\n");
+            for (RemediationAction a : deferredActions) {
+                html.append("      <li>").append(escapeHtml(a.getAction()));
+                if (a.getTarget() != null && !a.getTarget().isEmpty()) {
+                    html.append(" — target: ").append(escapeHtml(a.getTarget().toString()));
+                }
+                if (a.getData() != null && !a.getData().isEmpty()) {
+                    html.append(" — data: ").append(escapeHtml(a.getData().toString()));
+                }
+                html.append("</li>\n");
+            }
+            html.append("    </ul>\n");
+            html.append("  </section>\n");
+            html.append("</body>\n");
+        } else {
+            html.append("  </main>\n");
+            html.append("</body>\n");
+        }
+        html.append("</html>\n");
+        return html.toString();
+    }
+
+    /** Build key "page_imageIndex" from action target map for matching to images. */
+    private static String imageTargetKey(Map<String, Object> target) {
+        if (target == null) return null;
+        Object p = target.get("page");
+        Object i = target.get("imageIndex");
+        if (p == null) return null;
+        int page = p instanceof Number ? ((Number) p).intValue() : Integer.parseInt(String.valueOf(p));
+        int idx = i instanceof Number ? ((Number) i).intValue() : (i != null ? Integer.parseInt(String.valueOf(i)) : 0);
+        return page + "_" + idx;
+    }
+
     private String escapeHtml(String text) {
+        if (text == null) return "";
         return text.replace("&", "&amp;")
                    .replace("<", "&lt;")
                    .replace(">", "&gt;")
@@ -480,12 +750,19 @@ public class chatDocService {
     }
 
     /**
-     * Get all completed altered documents
+     * Get all completed altered documents (uses outcomeStatus / pipelineStatus; falls back to legacy status).
      */
     public List<chatDoc> getAlteredDocuments() {
         return documentRepository.findAll().stream()
-            .filter(doc -> doc.getStatus() != null && 
-                ("REMEDIATED".equals(doc.getStatus()) || "NEEDS_REVIEW".equals(doc.getStatus())))
+            .filter(doc -> {
+                String out = doc.getOutcomeStatus();
+                if (out != null && ("REMEDIATED".equals(out) || "REMEDIATED_WITH_WARNINGS".equals(out) || "NEEDS_REVIEW".equals(out)))
+                    return true;
+                String ps = doc.getPipelineStatus();
+                if (ps != null && "HTML_DONE".equals(ps)) return true;
+                String s = doc.getStatus();
+                return s != null && ("REMEDIATED".equals(s) || "NEEDS_REVIEW".equals(s));
+            })
             .filter(doc -> doc.getAlteredContent() != null && !doc.getAlteredContent().isEmpty())
             .collect(Collectors.toList());
     }
@@ -511,5 +788,19 @@ public class chatDocService {
         }
         
         return null;
+    }
+
+    /**
+     * Update compliance label by human (overrides heuristic).
+     * @param id document id
+     * @param complianceLabel COMPLIANT, NONCOMPLIANT, or UNKNOWN
+     * @return updated document, or null if not found
+     */
+    public chatDoc updateHumanLabel(Long id, String complianceLabel) {
+        chatDoc document = getDocumentById(id);
+        if (document == null) return null;
+        document.setComplianceLabel(complianceLabel);
+        document.setLabelSource("HUMAN");
+        return documentRepository.save(document);
     }
 }
