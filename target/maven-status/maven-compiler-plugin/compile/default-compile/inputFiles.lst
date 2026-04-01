@@ -1,4 +1,3 @@
-/Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/ModelInit.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/MvcConfig.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/person/PersonApiController.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/hacks/methodsDataTypes/Matrix.java
@@ -29,13 +28,13 @@
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/hacks/methodsDataTypes/Menu.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/hacks/methodsDataTypes/Number.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/chatLLM/RemediationAction.java
-/Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/leaderboard/LeaderboardStuff.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/hacks/methodsDataTypes/IntByValue.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/leaderboard/LeaderboardApiController.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/jokes/JokesJpaRepository.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/person/Person.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/jwt/JwtAuthenticationEntryPoint.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/calendar/CalendarApiController.java
+/Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/StartupSeedService.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/hacks/methodsDataTypes/DiverseArray.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/hacks/methodsDataTypes/DoNothingByValue.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/hacks/classDataStruct/Person.java
@@ -60,6 +59,7 @@
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/chatLLM/chatDocApiController.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/lightboard/LightBoard.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/chatLLM/RemediationIssue.java
+/Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/StartupLifecycleConfiguration.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/mvc/chatLLM/AccessibilityReport.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/hacks/methodsDataTypes/CB2015q8.java
 /Users/anthony/Documents/vscodeNU/CS_2535/Accessibility_Backend/src/main/java/com/husky/spring_portfolio/WebAppInitializer.java

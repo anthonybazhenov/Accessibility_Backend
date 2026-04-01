@@ -8,6 +8,18 @@ import java.util.List;
  */
 public class RemediationIssue {
 
+    /** Plain-text error description (LLM / corrections summary round-trip). */
+    @JsonProperty("description")
+    private String description;
+
+    /** WCAG success criterion label (LLM / corrections summary). */
+    @JsonProperty("criterion")
+    private String criterion;
+
+    /** Plain-text correction instructions (LLM / corrections summary). */
+    @JsonProperty("correction")
+    private String correction;
+
     @JsonProperty("successCriteria")
     private String successCriteria; // e.g. "1.1.1"
 
@@ -27,6 +39,36 @@ public class RemediationIssue {
         this.severity = severity;
         this.evidence = evidence;
         this.fixSteps = fixSteps;
+    }
+
+    public String getDescription() {
+        return description != null && !description.isEmpty() ? description : evidence;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getCriterion() {
+        return criterion != null && !criterion.isEmpty() ? criterion : successCriteria;
+    }
+
+    public void setCriterion(String criterion) {
+        this.criterion = criterion;
+    }
+
+    public String getCorrection() {
+        if (correction != null && !correction.isEmpty()) {
+            return correction;
+        }
+        if (fixSteps == null || fixSteps.isEmpty()) {
+            return "";
+        }
+        return String.join("\n", fixSteps);
+    }
+
+    public void setCorrection(String correction) {
+        this.correction = correction;
     }
 
     public String getSuccessCriteria() { return successCriteria; }

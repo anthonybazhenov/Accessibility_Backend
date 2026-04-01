@@ -6,19 +6,18 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.beans.factory.annotation.Value;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.core.type.TypeReference;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.Objects;
+import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
 import java.util.Base64;
 import java.util.HashMap;
@@ -37,18 +36,30 @@ import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.apache.pdfbox.contentstream.PDFStreamEngine;
-import org.apache.pdfbox.contentstream.operator.Operator;
-import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSName;
 
 import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 @Service
 public class chatDocService {
+
+    private static final Logger log = LoggerFactory.getLogger(chatDocService.class);
+
+    private static final String STAGE1_SYSTEM_PROMPT = "You are an expert in web accessibility and WCAG 2.1 Level AA compliance for government HTML documents. When given an HTML document, identify every ADA and WCAG 2.1 Level AA conformance error present. For each error, state: the error description, the WCAG success criterion it violates, the conformance level (A or AA), why the error is problematic for users of assistive technology, and the correction that must be applied. If no errors are present, state that the document is fully conformant. Output plain text only.";
+
+    private static final String STAGE1_USER_PREFIX = "Review the following HTML document for ADA and WCAG 2.1 Level AA accessibility errors and provide a corrections summary.\n\n";
+
+    private static final String STAGE2_SYSTEM_PROMPT = "You are an expert in web accessibility and WCAG 2.1 Level AA compliance for government HTML documents. When given a non-compliant HTML document and a corrections summary identifying all accessibility violations, apply every correction specified and return a single fully compliant HTML document. Make only the changes specified in the corrections summary. Do not add, remove, or change anything that is not explicitly addressed by the corrections summary. Output valid HTML only.";
+
+    private static final String STAGE2_USER_PREFIX = "Apply the following corrections summary to the provided HTML document and return a fully WCAG 2.1 Level AA conformant version of the document.\n\n";
+
     private final chatDocRepository documentRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final HttpClient openaiHttpClient = HttpClient.newBuilder().build();
     
     @Value("${app.upload.dir:volumes/uploads}")
     private String uploadDir;
@@ -66,7 +77,7 @@ public class chatDocService {
     /**
      * Optional fine-tuned model for <strong>stage 2</strong>: original document content +
      * remediation plan → altered/accessible HTML (or full remediated document).
-     * When empty, the pipeline uses deterministic {@link #createAccessibleHtmlFromPlan} instead of an LLM.
+     * When empty, Stage 2 is skipped; with a plan present, {@link #createAccessibleHtmlFromPlan} is used instead.
      */
     @Value("${openai.alt.model:}")
     private String openaiAltModel;
@@ -88,8 +99,8 @@ public class chatDocService {
     }
 
     /**
-     * Model for altered-document LLM step. Only non-empty values enable the future/proposed
-     * chat completion that consumes document + plan and returns HTML.
+     * Model for Stage 2 LLM. Only non-empty values enable chat completion (raw HTML + plan → fixed HTML).
+     * When empty or Stage 2 fails, {@link #createAccessibleHtmlFromPlan} supplies HTML if a plan exists.
      */
     private String modelForAlteredDocumentGeneration() {
         if (openaiAltModel == null || openaiAltModel.isBlank()) {
@@ -159,17 +170,30 @@ public class chatDocService {
                 document.setLabelSource("HEURISTIC");
             }
 
-            // Step 4: Remediation plan (stage 1: openai.plan.model → plan); then altered HTML
-            // (stage 2: optional openai.alt.model LLM, else deterministic createAccessibleHtmlFromPlan)
-            RemediationPlan plan = generateRemediationPlanWithModel(document, report, images);
+            // 4. RAW HTML with intentional a11y errors (matches training patterns) for Stage 1 / Stage 2 input.
+            String rawHtml = convertToRawHtml(originalContent, images);
+
+            log.info("Using plan model: {}", modelForPlanGeneration());
+            if (modelForAlteredDocumentGeneration() != null) {
+                log.info("Using altered-doc model: {}", modelForAlteredDocumentGeneration());
+            } else {
+                log.info("No altered-doc model configured; Stage 2 skipped, will use createAccessibleHtmlFromPlan if plan exists");
+            }
+
+            // 5. Stage 1: rawHtml → remediation plan (fine-tuned model).
+            RemediationPlan plan = generateRemediationPlanWithModel(document, report, images, rawHtml);
+
             String accessibleHtml;
             if (plan != null) {
                 document.setRemediationPlanJson(objectMapper.writeValueAsString(plan));
                 String llmHtml = generateAlteredDocumentWithModel(
-                    originalContent, images, altTextResults, plan);
-                accessibleHtml = (llmHtml != null && !llmHtml.isBlank())
-                    ? llmHtml
-                    : createAccessibleHtmlFromPlan(originalContent, images, altTextResults, plan);
+                    rawHtml, images, altTextResults, plan);
+                if (llmHtml != null && !llmHtml.isBlank()) {
+                    accessibleHtml = llmHtml;
+                } else {
+                    accessibleHtml = createAccessibleHtmlFromPlan(
+                        originalContent, images, altTextResults, plan);
+                }
             } else {
                 accessibleHtml = createAccessibleHtml(originalContent, images, altTextResults);
             }
@@ -469,38 +493,252 @@ public class chatDocService {
     }
 
     /**
-     * Stage 1: Generate a {@link RemediationPlan} using {@link #modelForPlanGeneration()}
-     * (from {@code openai.plan.model}, else {@code openai.model}). Returns null if not implemented or on failure.
-     * When non-null, altered HTML uses {@link #generateAlteredDocumentWithModel} if {@code openai.alt.model}
-     * is set, otherwise {@link #createAccessibleHtmlFromPlan}.
+     * OpenAI Chat Completions (JSON) via {@link HttpClient}. Matches fine-tuned chat message layout.
      */
-    private RemediationPlan generateRemediationPlanWithModel(chatDoc document, AccessibilityReport report,
-                                                             List<ImageInfo> images) {
-        // Ensures plan-model resolution stays wired (openai.plan.model or openai.model).
-        Objects.requireNonNull(modelForPlanGeneration(), "Plan generation model must resolve");
-        // TODO: POST chat/completions with modelForPlanGeneration(), payload = original content + report summary +
-        //       image summaries (see FineTuningPlanDataBuilder input shape); parse JSON → RemediationPlan.
-        // For now return null so we use createAccessibleHtml without a stored plan.
-        return null;
+    private String callOpenAICompletion(String systemPrompt, String userPrompt, String model, int maxTokens,
+                                      double temperature) throws IOException {
+        if (openaiApiKey == null || openaiApiKey.isBlank()) {
+            throw new IOException("OpenAI API key is not configured");
+        }
+        if (model == null || model.isBlank()) {
+            throw new IOException("OpenAI model is not configured");
+        }
+
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("max_tokens", maxTokens);
+        requestBody.put("temperature", temperature);
+
+        List<Map<String, String>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", systemPrompt));
+        messages.add(Map.of("role", "user", "content", userPrompt));
+        requestBody.put("messages", messages);
+
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+            .header("Authorization", "Bearer " + openaiApiKey)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+            .build();
+
+        HttpResponse<String> response;
+        try {
+            response = openaiHttpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("OpenAI request interrupted", e);
+        }
+        int code = response.statusCode();
+        String body = response.body();
+        if (code < 200 || code >= 300) {
+            log.error("OpenAI API error: {} — {}", code, body);
+            throw new IOException("OpenAI API call failed with HTTP " + code);
+        }
+
+        JsonNode root = objectMapper.readTree(body);
+        JsonNode choices = root.path("choices");
+        if (!choices.isArray() || choices.isEmpty()) {
+            log.warn("OpenAI response had no choices: {}", body);
+            return "";
+        }
+        return choices.get(0).path("message").path("content").asText("");
+    }
+
+    private static String stripMarkdownFences(String text) {
+        if (text == null) {
+            return "";
+        }
+        String t = text.trim();
+        if (t.startsWith("```")) {
+            int firstNl = t.indexOf('\n');
+            if (firstNl > 0) {
+                t = t.substring(firstNl + 1);
+            }
+            int endFence = t.lastIndexOf("```");
+            if (endFence >= 0) {
+                t = t.substring(0, endFence);
+            }
+            return t.trim();
+        }
+        return t;
     }
 
     /**
-     * Stage 2: Optional LLM that takes original document context + remediation plan and returns accessible HTML.
-     * Uses {@code openai.alt.model} only when set; otherwise returns null and the caller uses
-     * {@link #createAccessibleHtmlFromPlan}.
+     * Parses plain-text corrections summary (training format) into {@link RemediationIssue} list.
      */
-    private String generateAlteredDocumentWithModel(String originalContent, List<ImageInfo> images,
+    private RemediationPlan parseCorrectionsTextToPlan(String correctionsText) {
+        String text = stripMarkdownFences(correctionsText);
+        if (text == null || text.isBlank()) {
+            return RemediationPlan.forParsedAudit(new ArrayList<>());
+        }
+
+        List<RemediationIssue> issues = new ArrayList<>();
+        String[] sections = text.split("---");
+        for (String rawSection : sections) {
+            String section = rawSection.trim();
+            if (section.isEmpty() || section.contains("CORRECTIONS SUMMARY")) {
+                continue;
+            }
+
+            RemediationIssue issue = new RemediationIssue();
+            StringBuilder correctionBuf = new StringBuilder();
+            boolean inCorrection = false;
+            boolean foundError = false;
+
+            for (String line : section.split("\r?\n")) {
+                line = line.trim();
+                if (line.isEmpty()) {
+                    continue;
+                }
+                if (line.matches("ERROR\\s+\\d+\\s*:.*")) {
+                    foundError = true;
+                    inCorrection = false;
+                    int colon = line.indexOf(':');
+                    String desc = colon >= 0 ? line.substring(colon + 1).trim() : line;
+                    issue.setDescription(desc);
+                    continue;
+                }
+                if (line.startsWith("WCAG criterion:")) {
+                    inCorrection = false;
+                    issue.setCriterion(line.substring("WCAG criterion:".length()).trim());
+                    continue;
+                }
+                if (line.startsWith("Correction:")) {
+                    inCorrection = true;
+                    String rest = line.substring("Correction:".length()).trim();
+                    if (!rest.isEmpty()) {
+                        correctionBuf.append(rest).append('\n');
+                    }
+                    continue;
+                }
+                if (inCorrection) {
+                    correctionBuf.append(line).append('\n');
+                }
+            }
+            issue.setCorrection(correctionBuf.toString().trim());
+
+            if (foundError && issue.getDescription() != null && !issue.getDescription().isEmpty()) {
+                issue.setSuccessCriteria(issue.getCriterion());
+                issue.setEvidence(issue.getDescription());
+                issues.add(issue);
+            }
+        }
+
+        return RemediationPlan.forParsedAudit(issues);
+    }
+
+    /**
+     * Stage 1: HTML document (same shape as training) → plain-text corrections → {@link RemediationPlan}.
+     */
+    private RemediationPlan generateRemediationPlanWithModel(chatDoc document, AccessibilityReport report,
+                                                             List<ImageInfo> images, String htmlDocument) {
+        try {
+            String model = modelForPlanGeneration();
+            if (model == null || model.isBlank()) {
+                log.warn("No plan model configured, returning null");
+                return null;
+            }
+            if (openaiApiKey == null || openaiApiKey.isBlank()) {
+                log.warn("No OpenAI API key configured, skipping plan generation");
+                return null;
+            }
+
+            String userPrompt = STAGE1_USER_PREFIX + htmlDocument;
+            String responseText = callOpenAICompletion(STAGE1_SYSTEM_PROMPT, userPrompt, model, 4000, 0.3);
+            if (responseText == null || responseText.isBlank()) {
+                log.warn("Empty plan response from model");
+                return null;
+            }
+
+            return parseCorrectionsTextToPlan(responseText);
+        } catch (Exception e) {
+            log.error("Failed to generate remediation plan with model", e);
+            return null;
+        }
+    }
+
+    /**
+     * Stage 2: corrections summary + non-compliant HTML → fixed HTML (fine-tuned format).
+     * {@code documentHtml} must match Stage 1 input (typically {@link #convertToRawHtml} output).
+     * On null/empty return, {@link #processPdfDocument} falls back to {@link #createAccessibleHtmlFromPlan}.
+     */
+    private String generateAlteredDocumentWithModel(String documentHtml, List<ImageInfo> images,
                                                     List<AltTextResult> altTextResults, RemediationPlan plan) {
-        String model = modelForAlteredDocumentGeneration();
-        if (model == null) {
+        try {
+            String model = modelForAlteredDocumentGeneration();
+            if (model == null || model.isBlank()) {
+                log.info("No altered-doc model configured, skipping LLM generation");
+                return null;
+            }
+            if (openaiApiKey == null || openaiApiKey.isBlank()) {
+                log.warn("No OpenAI API key configured, skipping LLM generation");
+                return null;
+            }
+
+            String correctionsSummary = plan.toCorrectionsText();
+            String userPrompt = STAGE2_USER_PREFIX + correctionsSummary + "\n\n" + documentHtml;
+
+            String fixedHtml = callOpenAICompletion(STAGE2_SYSTEM_PROMPT, userPrompt, model, 8000, 0.2);
+            if (fixedHtml == null || fixedHtml.isBlank()) {
+                return null;
+            }
+            return stripMarkdownFences(fixedHtml);
+        } catch (Exception e) {
+            log.error("Failed to generate altered document with model", e);
             return null;
         }
-        if (openaiApiKey == null || openaiApiKey.isEmpty()) {
-            return null;
+    }
+
+    /**
+     * Builds HTML with common accessibility defects (no {@code lang}, pseudo-headings as styled divs,
+     * images without {@code alt}) so Stage 1 can detect them and Stage 2 can fix them—matching error
+     * patterns typical of the fine-tuning corpus. Not used as final user-facing output when plan
+     * generation fails; see {@link #processPdfDocument}.
+     */
+    private String convertToRawHtml(String originalContent, List<ImageInfo> images) {
+        StringBuilder html = new StringBuilder();
+
+        html.append("<!DOCTYPE html>\n");
+        html.append("<html>\n");
+        html.append("<head>\n");
+        html.append("  <meta charset=\"UTF-8\">\n");
+        html.append("  <title>Document</title>\n");
+        html.append("</head>\n");
+        html.append("<body>\n");
+
+        if (originalContent != null) {
+            String[] paragraphs = originalContent.split("\n\n");
+            for (String para : paragraphs) {
+                para = para.trim();
+                if (para.isEmpty()) {
+                    continue;
+                }
+                if (para.length() < 100) {
+                    html.append("  <div class=\"heading\">")
+                        .append(escapeHtml(para))
+                        .append("</div>\n");
+                } else {
+                    html.append("  <p>").append(escapeHtml(para)).append("</p>\n");
+                }
+            }
         }
-        // TODO: Build user message with originalContent (truncated), plan JSON, altText summary; model = openai.alt.model;
-        //       request full HTML; validate/sanitize; return string.
-        return null;
+
+        List<ImageInfo> imgList = images != null ? images : List.of();
+        for (ImageInfo image : imgList) {
+            if (image == null || image.getImageBytes() == null) {
+                continue;
+            }
+            html.append("  <img src=\"data:image/png;base64,")
+                .append(Base64.getEncoder().encodeToString(image.getImageBytes()))
+                .append("\" />\n");
+        }
+
+        html.append("</body>\n");
+        html.append("</html>\n");
+
+        return html.toString();
     }
 
     /**

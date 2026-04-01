@@ -54,7 +54,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--file",
-        default="training/openai_html_remediation.jsonl",
+        default="training/combined_remediations.jsonl",
         help="Path to the JSONL training file (default: training/openai_html_remediation.jsonl)",
     )
     parser.add_argument(

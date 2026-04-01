@@ -6,7 +6,6 @@ com/husky/hacks/methodsDataTypes/IntegerByValueOrReference.class
 com/husky/spring_portfolio/mvc/note/Note.class
 com/husky/hacks/methodsDataTypes/Triple.class
 com/husky/spring_portfolio/mvc/note/NoteJpaRepository.class
-com/husky/spring_portfolio/mvc/leaderboard/LeaderboardStuff.class
 com/husky/hacks/classDataStruct/QueueTester.class
 com/husky/hacks/methodsDataTypes/Menu.class
 com/husky/spring_portfolio/controllers/Birds.class
@@ -14,7 +13,6 @@ com/husky/spring_portfolio/mvc/jokes/Jokes.class
 com/husky/hacks/methodsDataTypes/IntByReference.class
 com/husky/hacks/methodsDataTypes/DiverseArray.class
 com/husky/hacks/classDataStruct/Cupcakes.class
-com/husky/spring_portfolio/mvc/ModelInit.class
 com/husky/spring_portfolio/mvc/person/PersonApiController.class
 com/husky/hacks/methodsDataTypes/MenuRow.class
 com/husky/hacks/classDataStruct/Animal$KeyType.class
