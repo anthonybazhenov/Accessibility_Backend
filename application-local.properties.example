@@ -1,0 +1,24 @@
+# Copy to application-local.properties (gitignored). Restart after editing.
+#
+# openai.api.key=sk-...     OR: export OPENAI_API_KEY=sk-...
+#
+# 1) Vision: draft alt from the image (must support image_url)
+openai.alt.model=gpt-4o-mini
+#
+# 2) Optional text refine: your fine-tuned model polishes alt/longdesc (text only, no image)
+# openai.model=ft:gpt-4o-mini-2025-04-14:personal::YOUR_JOB_ID
+# Or: export OPENAI_MODEL=ft:...
+#
+# If the API returns "model does not exist" / no access: id must match the dashboard exactly; API key must be from
+# the same OpenAI org (and project, if you use project-scoped keys) as the fine-tune. Or disable refine:
+# openai.refine.enabled=false
+#
+# Email (password reset): set host and credentials. Match app.frontend.base-url to where you open the static site.
+# app.frontend.base-url=http://127.0.0.1:5500
+# app.mail.from=your-app@gmail.com
+# spring.mail.host=smtp.gmail.com
+# spring.mail.port=587
+# spring.mail.username=your-app@gmail.com
+# spring.mail.password=app-password
+# spring.mail.properties.mail.smtp.auth=true
+# spring.mail.properties.mail.smtp.starttls.enable=true

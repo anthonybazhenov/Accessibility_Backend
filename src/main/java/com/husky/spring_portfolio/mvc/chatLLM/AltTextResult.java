@@ -1,10 +1,12 @@
 package com.husky.spring_portfolio.mvc.chatLLM;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Represents the alt text result for an image from OpenAI API
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AltTextResult {
     @JsonProperty("decorative")
     private boolean decorative;

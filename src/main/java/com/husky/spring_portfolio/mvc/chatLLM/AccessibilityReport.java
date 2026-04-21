@@ -40,6 +40,14 @@ public class AccessibilityReport {
     @JsonProperty("total_images")
     private int totalImages;
 
+    /** Human-readable lines describing what the pipeline changed or added */
+    @JsonProperty("alterations")
+    private List<String> alterations;
+
+    /** True when a remediated PDF file exists on disk (optional export path) */
+    @JsonProperty("remediated_pdf_available")
+    private boolean remediatedPdfAvailable;
+
     public AccessibilityReport() {}
 
     public AccessibilityReport(Long documentId, String filename, List<AccessibilityIssue> issues) {
@@ -96,4 +104,12 @@ public class AccessibilityReport {
 
     public int getTotalImages() { return totalImages; }
     public void setTotalImages(int totalImages) { this.totalImages = totalImages; }
+
+    public List<String> getAlterations() { return alterations; }
+    public void setAlterations(List<String> alterations) { this.alterations = alterations; }
+
+    public boolean isRemediatedPdfAvailable() { return remediatedPdfAvailable; }
+    public void setRemediatedPdfAvailable(boolean remediatedPdfAvailable) {
+        this.remediatedPdfAvailable = remediatedPdfAvailable;
+    }
 }

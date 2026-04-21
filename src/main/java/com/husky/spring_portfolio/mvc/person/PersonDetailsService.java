@@ -34,16 +34,23 @@ public class PersonDetailsService implements UserDetailsService {  // "implement
     /* UserDetailsService Overrides and maps Person & Roles POJO into Spring Security */
     @Override
     public org.springframework.security.core.userdetails.UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        Person person = personJpaRepository.findByUsername(username); // setting variable user equal to the method finding the username in the database
-        if(person==null) {
+        Person person = personJpaRepository.findByUsernameIgnoreCase(username.trim());
+        if (person == null) {
+            person = personJpaRepository.findByUsername(username.trim());
+        }
+        if (person == null) {
 			throw new UsernameNotFoundException("User not found with username: " + username);
         }
         Collection<SimpleGrantedAuthority> authorities = new ArrayList<>();
         person.getRoles().forEach(role -> { //loop through roles
             authorities.add(new SimpleGrantedAuthority(role.getName())); //create a SimpleGrantedAuthority by passed in role, adding it all to the authorities list, list of roles gets past in for spring security
         });
-        // train spring security to User and Authorities
-        return new org.springframework.security.core.userdetails.User(person.getUsername(), person.getPassword(), authorities);
+        return org.springframework.security.core.userdetails.User
+                .withUsername(person.getUsername())
+                .password(person.getPassword())
+                .disabled(false)
+                .authorities(authorities)
+                .build();
     }
 
     /* Person Section */

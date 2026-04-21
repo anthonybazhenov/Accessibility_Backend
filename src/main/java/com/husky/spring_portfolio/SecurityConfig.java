@@ -19,9 +19,9 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import org.springframework.security.web.header.writers.StaticHeadersWriter;
 
 
 /*
@@ -69,22 +69,15 @@ public class SecurityConfig {
 				)
 				// list the requests/endpoints need to be authenticated
 				.authorizeHttpRequests(auth -> auth
+					.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 					.requestMatchers("/authenticate").permitAll()
 					.requestMatchers("/api/person/delete/**").hasAnyAuthority("ROLE_ADMIN")
 					.requestMatchers("/api/person/delete/self").hasAnyAuthority("ROLE_STUDENT")
 					.requestMatchers("/api/person/post/**").permitAll()
 					.requestMatchers("/**").permitAll()
 				)
-				// support cors
+				// support cors (do not add static Access-Control-* here — conflicts with CorsConfigurationSource)
 				.cors(Customizer.withDefaults())
-				.headers(headers -> headers
-					.addHeaderWriter(new StaticHeadersWriter("Access-Control-Allow-Credentials", "true"))
-					.addHeaderWriter(new StaticHeadersWriter("Access-Control-Allow-ExposedHeaders", "*", "Authorization"))
-					.addHeaderWriter(new StaticHeadersWriter("Access-Control-Allow-Headers", "Content-Type", "Authorization", "x-csrf-token"))
-					.addHeaderWriter(new StaticHeadersWriter("Access-Control-Allow-MaxAge", "600"))
-					.addHeaderWriter(new StaticHeadersWriter("Access-Control-Allow-Methods", "POST", "GET", "OPTIONS", "HEAD"))
-					.addHeaderWriter(new StaticHeadersWriter("Access-Control-Allow-Origin", "https://the-gpt-warriors.github.io/"))
-				)
 				.formLogin(form -> form 
 					.loginPage("/login")
 				)

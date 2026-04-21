@@ -32,6 +32,10 @@ Thumbs.db
 volumes/sqlite.db
 volumes/*.db
 
+# User-uploaded files (PDFs etc.); keep folder in repo — nothing under uploads is committed
+volumes/uploads/**
+!volumes/uploads/.gitkeep
+
 # Compiled classes
 *.class
 

@@ -30,37 +30,40 @@ public class JwtRequestFilter extends OncePerRequestFilter {
 	@Autowired
 	private JwtTokenUtil jwtTokenUtil;
 
+	private static final String BEARER_PREFIX = "Bearer ";
+
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
 
-		final Cookie[] cookies = request.getCookies();
 		String username = null;
 		String jwtToken = null;
-		// Try to get cookie with name jwt
-		if ((cookies == null) || (cookies.length == 0)) {
-			logger.warn("No cookies");
-		} else {
-			for (Cookie cookie: cookies) {
-				if (cookie.getName().equals("jwt")) {
+
+		String authHeader = request.getHeader("Authorization");
+		if (authHeader != null && authHeader.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
+			jwtToken = authHeader.substring(BEARER_PREFIX.length()).trim();
+		}
+
+		final Cookie[] cookies = request.getCookies();
+		if ((jwtToken == null || jwtToken.isEmpty()) && cookies != null) {
+			for (Cookie cookie : cookies) {
+				if ("jwt".equals(cookie.getName())) {
 					jwtToken = cookie.getValue();
-				}
-			}
-			if (jwtToken == null) {
-				logger.warn("No jwt cookie");
-			} else {
-				try {
-					// Get username from the token if jwt cookie exists
-					username = jwtTokenUtil.getUsernameFromToken(jwtToken);
-				} catch (IllegalArgumentException e) {
-					System.out.println("Unable to get JWT Token");
-				} catch (ExpiredJwtException e) {
-					System.out.println("JWT Token has expired");
-				} catch (Exception e) {
-					System.out.println("An error occurred");
+					break;
 				}
 			}
 		}
-		// If no cookies have name jwt return warning
+
+		if (jwtToken != null && !jwtToken.isEmpty()) {
+			try {
+				username = jwtTokenUtil.getUsernameFromToken(jwtToken);
+			} catch (IllegalArgumentException e) {
+				System.out.println("Unable to get JWT Token");
+			} catch (ExpiredJwtException e) {
+				System.out.println("JWT Token has expired");
+			} catch (Exception e) {
+				System.out.println("An error occurred");
+			}
+		}
 
 		// Once we get the token validate it.
 		if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {

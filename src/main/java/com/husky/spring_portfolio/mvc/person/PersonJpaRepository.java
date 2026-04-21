@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
+import java.util.Optional;
 
 /*
 Extends the JpaRepository interface from Spring Data JPA.
@@ -13,7 +14,15 @@ Extends the JpaRepository interface from Spring Data JPA.
  */
 public interface PersonJpaRepository extends JpaRepository<Person, Long> {
     Person findByEmail(String email);
+
+    Optional<Person> findByEmailIgnoreCase(String email);
+
     Person findByUsername(String username);
+
+    /** Prefer for login so username matching is case-insensitive (stored username is still canonical). */
+    Person findByUsernameIgnoreCase(String username);
+
+    Optional<Person> findByPasswordResetToken(String token);
 
     List<Person> findAllByOrderByNameAsc();
 

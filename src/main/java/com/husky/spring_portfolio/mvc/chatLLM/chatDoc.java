@@ -1,5 +1,7 @@
 package com.husky.spring_portfolio.mvc.chatLLM;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -76,9 +78,11 @@ public class chatDoc {
     public String getOriginalFilename() { return originalFilename; }
     public void setOriginalFilename(String originalFilename) { this.originalFilename = originalFilename; }
     
+    @JsonIgnore
     public String getOriginalContent() { return originalContent; }
     public void setOriginalContent(String originalContent) { this.originalContent = originalContent; }
     
+    @JsonIgnore
     public String getAlteredContent() { return alteredContent; }
     public void setAlteredContent(String alteredContent) { this.alteredContent = alteredContent; }
     
@@ -88,9 +92,11 @@ public class chatDoc {
     public String getAlteredPdfPath() { return alteredPdfPath; }
     public void setAlteredPdfPath(String alteredPdfPath) { this.alteredPdfPath = alteredPdfPath; }
     
+    @JsonIgnore
     public String getAltTextJson() { return altTextJson; }
     public void setAltTextJson(String altTextJson) { this.altTextJson = altTextJson; }
     
+    @JsonIgnore
     public String getAccessibilityReportJson() { return accessibilityReportJson; }
     public void setAccessibilityReportJson(String accessibilityReportJson) { 
         this.accessibilityReportJson = accessibilityReportJson; 

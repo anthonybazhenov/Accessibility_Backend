@@ -1,6 +1,7 @@
 package com.husky.spring_portfolio.mvc.person;
 
 import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Period;
 import java.time.ZoneId;
@@ -26,6 +27,8 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.springframework.format.annotation.DateTimeFormat;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.vladmihalcea.hibernate.type.json.JsonType;
 
 import lombok.AllArgsConstructor;
@@ -60,6 +63,7 @@ public class Person {
     private String email;
 
     @NotEmpty
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
 
     // @NonNull, etc placed in params of constructor: "@NonNull @Size(min = 2, max = 30, message = "Name (2 to 30 chars)") String name"
@@ -77,6 +81,12 @@ public class Person {
     // To be implemented
     @ManyToMany(fetch = EAGER)
     private Collection<PersonRole> roles = new ArrayList<>();
+
+    @JsonIgnore
+    private String passwordResetToken;
+
+    @JsonIgnore
+    private Instant passwordResetExpires;
 
     /* HashMap is used to store JSON for daily "stats"
     "stats": {
@@ -113,16 +123,14 @@ public class Person {
 
         // basics of class construction
         Person p1 = new Person();
-        p1.setName("Tay Kim");
-        p1.setEmail("tay@gmail.com");
-        p1.setUsername("TayKimmy");
-        p1.setPassword("taykimmy123");
-        // adding Note to notes collection
-        try {  // All data that converts formats could fail
+        p1.setName("Teuku Dakari");
+        p1.setEmail("teuku@gmail.com");
+        p1.setUsername("TeukuDakari");
+        p1.setPassword("teukudakari123");
+        try {
             Date d = new SimpleDateFormat("MM-dd-yyyy").parse("05-13-2007");
             p1.setDob(d);
         } catch (Exception e) {
-            // no actions as dob default is good enough
         }
 
         Person p2 = new Person();
@@ -137,10 +145,10 @@ public class Person {
         }
 
         Person p3 = new Person();
-        p3.setName("Ethan Tran");
-        p3.setEmail("ethan@gmail.com");
-        p3.setUsername("realethantran");
-        p3.setPassword("realethantran123");
+        p3.setName("Audrey Tung");
+        p3.setEmail("audrey@gmail.com");
+        p3.setUsername("AudreyTung");
+        p3.setPassword("audreytung123");
         try {
             Date d = new SimpleDateFormat("MM-dd-yyyy").parse("05-19-2007");
             p3.setDob(d);
@@ -148,10 +156,10 @@ public class Person {
         }
 
         Person p4 = new Person();
-        p4.setName("Emaad Mir");
-        p4.setEmail("emaad@gmail.com");
-        p4.setUsername("Emaad-Mir");
-        p4.setPassword("emaad-mir123");
+        p4.setName("Sun Choi");
+        p4.setEmail("sun@gmail.com");
+        p4.setUsername("SunChoi");
+        p4.setPassword("sunchoi123");
         try {
             Date d = new SimpleDateFormat("MM-dd-yyyy").parse("01-12-2007");
             p4.setDob(d);
@@ -159,12 +167,12 @@ public class Person {
         }
 
         Person p5 = new Person();
-        p5.setName("John Mortensen");
-        p5.setEmail("jm1021@gmail.com");
-        p5.setUsername("jmort29");
-        p5.setPassword("123Qwerty!");
+        p5.setName("Dani Luo");
+        p5.setEmail("dani@gmail.com");
+        p5.setUsername("DaniLuo");
+        p5.setPassword("daniluo123");
         try {
-            Date d = new SimpleDateFormat("MM-dd-yyyy").parse("10-21-1959");
+            Date d = new SimpleDateFormat("MM-dd-yyyy").parse("11-22-2007");
             p5.setDob(d);
         } catch (Exception e) {
         }
